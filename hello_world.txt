@@ -1,0 +1,2 @@
+echo Hello World
+20/7/2022 11:58pm Stranger Things Ep1 / Git with The Odin Project
