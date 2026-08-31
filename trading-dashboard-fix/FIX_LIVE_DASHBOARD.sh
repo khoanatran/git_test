@@ -39,11 +39,29 @@ curl -fsSL "$BASE/trade-tags-fixed.json" -o data/trade-tags.json
 after="$(node -e "const d=require('./data/trades-snapshot.json'); console.log(d.trades.length)")"
 echo "Fixed trades: $after (removed $((before - after)) archived May-July rows)"
 
+# Stop dashboard from re-pulling 336 trades from GitHub on next launch
+env_file="$repo/.env.local"
+if [[ -f "$env_file" ]] && grep -q 'GITHUB_BACKUP_ENABLED' "$env_file"; then
+  sed -i 's/^GITHUB_BACKUP_ENABLED=.*/GITHUB_BACKUP_ENABLED=false/' "$env_file"
+else
+  echo 'GITHUB_BACKUP_ENABLED=false' >> "$env_file"
+fi
+echo "Set .env.local -> GITHUB_BACKUP_ENABLED=false"
+
+if [[ "${FIX_LOCAL_ONLY:-}" == "1" ]]; then
+  echo "LOCAL FIX APPLIED ($after trades). Restart dashboard and hard-refresh browser."
+  exit 0
+fi
+
 git add data/trades-snapshot.json data/live-session.json data/flags.json data/trade-tags.json
 if git diff --cached --quiet; then
   echo "Data already fixed locally. Restart dashboard and hard-refresh browser."
 else
   git commit -m "Fix live dashboard: keep July 29+ trades only ($after trades)"
-  git push origin main
-  echo "Pushed to GitHub. Restart the dashboard and refresh your browser."
+  if git push origin main; then
+    sed -i 's/^GITHUB_BACKUP_ENABLED=false/GITHUB_BACKUP_ENABLED=true/' "$env_file" 2>/dev/null || true
+    echo "Pushed to GitHub. Restart the dashboard and refresh your browser."
+  else
+    echo "Push failed — local fix applied ($after trades). Sync stays disabled. Restart dashboard."
+  fi
 fi
