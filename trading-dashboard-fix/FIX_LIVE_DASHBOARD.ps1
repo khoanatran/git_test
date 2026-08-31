@@ -178,14 +178,21 @@ if ($LASTEXITCODE -ne 0) {
     return
 }
 
-# Stop the launch-time GitHub pull from restoring the archived trades
-$envFile = Join-Path $repo '.env.local'
-$envLines = @()
-if (Test-Path $envFile) {
-    $envLines = @(Get-Content $envFile | Where-Object { $_ -notmatch '^\s*GITHUB_BACKUP_ENABLED\s*=' })
+# Stop the launch-time GitHub pull from restoring the archived trades.
+# Re-enabled below if the push succeeds, since GitHub is correct at that point.
+function Set-GitHubSync {
+    param([string]$RepoRoot, [bool]$Enabled)
+    $file = Join-Path $RepoRoot '.env.local'
+    $lines = @()
+    if (Test-Path $file) {
+        $lines = @(Get-Content $file | Where-Object { $_ -notmatch '^\s*GITHUB_BACKUP_ENABLED\s*=' })
+    }
+    if (-not $Enabled) { $lines += 'GITHUB_BACKUP_ENABLED=false' }
+    Set-Content -Path $file -Value $lines
 }
-$envLines += 'GITHUB_BACKUP_ENABLED=false'
-Set-Content -Path $envFile -Value $envLines
+
+$envFile = Join-Path $repo '.env.local'
+Set-GitHubSync -RepoRoot $repo -Enabled $false
 Write-Host '.env.local: GITHUB_BACKUP_ENABLED=false (blocks the re-pull of 336)' -ForegroundColor Green
 
 $nextCache = Join-Path $repo '.next\cache'
@@ -212,9 +219,14 @@ try {
 
 Write-Host ''
 if ($pushed) {
+    # GitHub now holds the corrected snapshot, so restore normal backup behaviour
+    Set-GitHubSync -RepoRoot $repo -Enabled $true
     Write-Host 'Pushed the fix to GitHub main.' -ForegroundColor Green
+    Write-Host '.env.local: GitHub sync re-enabled (remote is correct now)' -ForegroundColor Green
 } else {
-    Write-Host 'Not pushed to GitHub (no write access). Sync is off, so 336 will not come back.' -ForegroundColor Yellow
+    Write-Host 'Not pushed to GitHub (no write access). Sync stays off, so 336 will not come back.' -ForegroundColor Yellow
+    Write-Host 'Re-enable it later by deleting the GITHUB_BACKUP_ENABLED line in .env.local,' -ForegroundColor Yellow
+    Write-Host 'once GitHub main holds the 62-trade snapshot.' -ForegroundColor Yellow
 }
 Write-Host ''
 Write-Host 'NOW DO THIS:' -ForegroundColor Cyan
